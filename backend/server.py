@@ -131,6 +131,45 @@ async def get_transaction(transaction_id: str):
     
     return SalesTransaction(**transaction)
 
+@api_router.put("/transactions/{transaction_id}", response_model=SalesTransaction)
+async def update_transaction(transaction_id: str, input: SalesTransactionUpdate):
+    # Get existing transaction
+    existing_transaction = await db.transactions.find_one({"id": transaction_id})
+    if not existing_transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    
+    # Convert existing transaction date back to date object if it's a string
+    if isinstance(existing_transaction['date_sold'], str):
+        existing_transaction['date_sold'] = datetime.fromisoformat(existing_transaction['date_sold']).date()
+    
+    # Update only provided fields
+    update_data = input.dict(exclude_unset=True)
+    
+    # Merge with existing data
+    transaction_dict = {**existing_transaction, **update_data}
+    
+    # Recalculate metrics with updated data
+    metrics = calculate_transaction_metrics(transaction_dict)
+    transaction_dict.update(metrics)
+    
+    # Update the updated timestamp
+    transaction_dict['created_at'] = datetime.utcnow()
+    
+    # Create updated transaction object
+    updated_transaction = SalesTransaction(**transaction_dict)
+    
+    # Convert to dict for MongoDB (handle date serialization)
+    transaction_for_db = updated_transaction.dict()
+    transaction_for_db['date_sold'] = transaction_for_db['date_sold'].isoformat()
+    
+    # Update in database
+    await db.transactions.update_one(
+        {"id": transaction_id}, 
+        {"$set": transaction_for_db}
+    )
+    
+    return updated_transaction
+
 @api_router.delete("/transactions/{transaction_id}")
 async def delete_transaction(transaction_id: str):
     result = await db.transactions.delete_one({"id": transaction_id})
