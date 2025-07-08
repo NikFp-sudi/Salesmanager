@@ -8,14 +8,22 @@ BASE_URL = "https://96d8f304-97eb-4f5e-9f00-bb49f289a82e.preview.emergentagent.c
 
 class SalesTrackingAPITest(unittest.TestCase):
     def setUp(self):
-        # Store transaction IDs for cleanup
+        # Store IDs for cleanup
         self.transaction_ids = []
+        self.inventory_ids = []
     
     def tearDown(self):
         # Clean up any transactions created during tests
         for transaction_id in self.transaction_ids:
             try:
                 requests.delete(f"{BASE_URL}/transactions/{transaction_id}")
+            except:
+                pass
+                
+        # Clean up any inventory items created during tests
+        for inventory_id in self.inventory_ids:
+            try:
+                requests.delete(f"{BASE_URL}/inventory/{inventory_id}")
             except:
                 pass
     
