@@ -322,6 +322,7 @@ function App() {
     daily_sales: []
   });
   const [loading, setLoading] = useState(true);
+  const [editingTransaction, setEditingTransaction] = useState(null);
 
   const fetchTransactions = async () => {
     try {
@@ -354,9 +355,27 @@ function App() {
     fetchDashboardStats(); // Refresh stats
   };
 
+  const handleTransactionUpdated = (updatedTransaction) => {
+    setTransactions(prev => 
+      prev.map(t => t.id === updatedTransaction.id ? updatedTransaction : t)
+    );
+    setEditingTransaction(null); // Clear edit mode
+    fetchDashboardStats(); // Refresh stats
+  };
+
   const handleTransactionDeleted = (deletedId) => {
     setTransactions(prev => prev.filter(t => t.id !== deletedId));
     fetchDashboardStats(); // Refresh stats
+  };
+
+  const handleTransactionEdit = (transaction) => {
+    setEditingTransaction(transaction);
+    // Scroll to top to show the form
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingTransaction(null);
   };
 
   if (loading) {
@@ -380,11 +399,17 @@ function App() {
         
         <Dashboard stats={dashboardStats} />
         
-        <TransactionForm onTransactionAdded={handleTransactionAdded} />
+        <TransactionForm 
+          onTransactionAdded={handleTransactionAdded}
+          onTransactionUpdated={handleTransactionUpdated}
+          editingTransaction={editingTransaction}
+          onCancelEdit={handleCancelEdit}
+        />
         
         <TransactionList 
           transactions={transactions} 
           onTransactionDeleted={handleTransactionDeleted}
+          onTransactionEdit={handleTransactionEdit}
         />
       </div>
     </div>
