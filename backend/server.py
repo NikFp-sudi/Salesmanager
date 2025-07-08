@@ -54,6 +54,36 @@ class SalesTransactionUpdate(BaseModel):
     quantity: Optional[int] = None
     date_sold: Optional[date] = None
 
+class InventoryItem(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    item_name: str
+    purchase_cost: float
+    suggested_retail_price: float
+    quantity_in_stock: int
+    reorder_level: int = 5
+    supplier: Optional[str] = None
+    category: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class InventoryItemCreate(BaseModel):
+    item_name: str
+    purchase_cost: float
+    suggested_retail_price: float
+    quantity_in_stock: int
+    reorder_level: int = 5
+    supplier: Optional[str] = None
+    category: Optional[str] = None
+
+class InventoryItemUpdate(BaseModel):
+    item_name: Optional[str] = None
+    purchase_cost: Optional[float] = None
+    suggested_retail_price: Optional[float] = None
+    quantity_in_stock: Optional[int] = None
+    reorder_level: Optional[int] = None
+    supplier: Optional[str] = None
+    category: Optional[str] = None
+
 class DashboardStats(BaseModel):
     total_revenue: float
     total_profit: float
@@ -61,6 +91,18 @@ class DashboardStats(BaseModel):
     average_profit_margin: float
     best_selling_item: Optional[str]
     daily_sales: List[dict]
+
+class InventoryStats(BaseModel):
+    total_items: int
+    total_stock_value: float
+    low_stock_items: int
+    out_of_stock_items: int
+    categories: List[str]
+
+class SalesChart(BaseModel):
+    labels: List[str]
+    revenue_data: List[float]
+    profit_data: List[float]
 
 # Helper function to calculate transaction metrics
 def calculate_transaction_metrics(transaction_data):
@@ -79,11 +121,26 @@ def calculate_transaction_metrics(transaction_data):
         'profit_margin': profit_margin
     }
 
+# Helper function to update inventory when sale is made
+async def update_inventory_on_sale(item_name: str, quantity_sold: int):
+    # Find inventory item by name
+    inventory_item = await db.inventory.find_one({"item_name": item_name})
+    if inventory_item:
+        new_quantity = inventory_item['quantity_in_stock'] - quantity_sold
+        if new_quantity < 0:
+            new_quantity = 0
+        
+        await db.inventory.update_one(
+            {"item_name": item_name},
+            {"$set": {"quantity_in_stock": new_quantity, "updated_at": datetime.utcnow()}}
+        )
+
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
 async def root():
     return {"message": "Sales Tracking System API"}
 
+# Sales Transaction Endpoints
 @api_router.post("/transactions", response_model=SalesTransaction)
 async def create_transaction(input: SalesTransactionCreate):
     transaction_dict = input.dict()
@@ -105,6 +162,9 @@ async def create_transaction(input: SalesTransactionCreate):
     
     # Insert into database
     result = await db.transactions.insert_one(transaction_for_db)
+    
+    # Update inventory
+    await update_inventory_on_sale(transaction_obj.item_name, transaction_obj.quantity)
     
     return transaction_obj
 
@@ -177,6 +237,88 @@ async def delete_transaction(transaction_id: str):
         raise HTTPException(status_code=404, detail="Transaction not found")
     return {"message": "Transaction deleted successfully"}
 
+# Inventory Endpoints
+@api_router.post("/inventory", response_model=InventoryItem)
+async def create_inventory_item(input: InventoryItemCreate):
+    item_dict = input.dict()
+    item_obj = InventoryItem(**item_dict)
+    
+    # Insert into database
+    result = await db.inventory.insert_one(item_obj.dict())
+    
+    return item_obj
+
+@api_router.get("/inventory", response_model=List[InventoryItem])
+async def get_inventory():
+    items = await db.inventory.find().sort("item_name", 1).to_list(1000)
+    return [InventoryItem(**item) for item in items]
+
+@api_router.get("/inventory/{item_id}", response_model=InventoryItem)
+async def get_inventory_item(item_id: str):
+    item = await db.inventory.find_one({"id": item_id})
+    if not item:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+    return InventoryItem(**item)
+
+@api_router.put("/inventory/{item_id}", response_model=InventoryItem)
+async def update_inventory_item(item_id: str, input: InventoryItemUpdate):
+    existing_item = await db.inventory.find_one({"id": item_id})
+    if not existing_item:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+    
+    # Update only provided fields
+    update_data = input.dict(exclude_unset=True)
+    update_data['updated_at'] = datetime.utcnow()
+    
+    # Merge with existing data
+    item_dict = {**existing_item, **update_data}
+    
+    # Create updated item object
+    updated_item = InventoryItem(**item_dict)
+    
+    # Update in database
+    await db.inventory.update_one(
+        {"id": item_id}, 
+        {"$set": updated_item.dict()}
+    )
+    
+    return updated_item
+
+@api_router.delete("/inventory/{item_id}")
+async def delete_inventory_item(item_id: str):
+    result = await db.inventory.delete_one({"id": item_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+    return {"message": "Inventory item deleted successfully"}
+
+@api_router.get("/inventory-stats", response_model=InventoryStats)
+async def get_inventory_stats():
+    items = await db.inventory.find().to_list(1000)
+    
+    if not items:
+        return InventoryStats(
+            total_items=0,
+            total_stock_value=0.0,
+            low_stock_items=0,
+            out_of_stock_items=0,
+            categories=[]
+        )
+    
+    total_items = len(items)
+    total_stock_value = sum(item['purchase_cost'] * item['quantity_in_stock'] for item in items)
+    low_stock_items = sum(1 for item in items if item['quantity_in_stock'] <= item['reorder_level'] and item['quantity_in_stock'] > 0)
+    out_of_stock_items = sum(1 for item in items if item['quantity_in_stock'] == 0)
+    
+    categories = list(set(item.get('category', 'Uncategorized') for item in items))
+    
+    return InventoryStats(
+        total_items=total_items,
+        total_stock_value=total_stock_value,
+        low_stock_items=low_stock_items,
+        out_of_stock_items=out_of_stock_items,
+        categories=categories
+    )
+
 @api_router.get("/dashboard", response_model=DashboardStats)
 async def get_dashboard_stats():
     # Get all transactions
@@ -246,6 +388,45 @@ async def get_dashboard_stats():
         average_profit_margin=average_profit_margin,
         best_selling_item=best_selling_item,
         daily_sales=daily_sales_list
+    )
+
+@api_router.get("/sales-chart", response_model=SalesChart)
+async def get_sales_chart():
+    # Get all transactions
+    transactions = await db.transactions.find().to_list(1000)
+    
+    if not transactions:
+        return SalesChart(
+            labels=[],
+            revenue_data=[],
+            profit_data=[]
+        )
+    
+    # Group by date
+    from collections import defaultdict
+    daily_data = defaultdict(lambda: {'revenue': 0, 'profit': 0})
+    
+    for t in transactions:
+        # Handle date conversion
+        if isinstance(t['date_sold'], str):
+            transaction_date = datetime.fromisoformat(t['date_sold']).date()
+        else:
+            transaction_date = t['date_sold']
+        
+        date_str = transaction_date.isoformat()
+        daily_data[date_str]['revenue'] += t['revenue']
+        daily_data[date_str]['profit'] += t['profit']
+    
+    # Sort by date and prepare for chart
+    sorted_dates = sorted(daily_data.keys())
+    labels = sorted_dates
+    revenue_data = [daily_data[date]['revenue'] for date in sorted_dates]
+    profit_data = [daily_data[date]['profit'] for date in sorted_dates]
+    
+    return SalesChart(
+        labels=labels,
+        revenue_data=revenue_data,
+        profit_data=profit_data
     )
 
 # Include the router in the main app
