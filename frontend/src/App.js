@@ -239,7 +239,7 @@ const Dashboard = ({ stats }) => {
 };
 
 // Transaction List Component
-const TransactionList = ({ transactions, onTransactionDeleted }) => {
+const TransactionList = ({ transactions, onTransactionDeleted, onTransactionEdit }) => {
   const deleteTransaction = async (id) => {
     if (window.confirm('Are you sure you want to delete this transaction?')) {
       try {
@@ -285,12 +285,20 @@ const TransactionList = ({ transactions, onTransactionDeleted }) => {
                   <td className="px-4 py-2 text-sm text-green-600 font-medium">${transaction.profit.toFixed(2)}</td>
                   <td className="px-4 py-2 text-sm text-gray-600">{transaction.profit_margin.toFixed(1)}%</td>
                   <td className="px-4 py-2">
-                    <button
-                      onClick={() => deleteTransaction(transaction.id)}
-                      className="text-red-600 hover:text-red-800 text-sm"
-                    >
-                      Delete
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => onTransactionEdit(transaction)}
+                        className="text-blue-600 hover:text-blue-800 text-sm"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => deleteTransaction(transaction.id)}
+                        className="text-red-600 hover:text-red-800 text-sm"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
