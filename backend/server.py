@@ -47,6 +47,13 @@ class SalesTransactionCreate(BaseModel):
     quantity: int = 1
     date_sold: Optional[date] = None
 
+class SalesTransactionUpdate(BaseModel):
+    item_name: Optional[str] = None
+    purchase_cost: Optional[float] = None
+    retail_price: Optional[float] = None
+    quantity: Optional[int] = None
+    date_sold: Optional[date] = None
+
 class DashboardStats(BaseModel):
     total_revenue: float
     total_profit: float
