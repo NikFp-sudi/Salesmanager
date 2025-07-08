@@ -6,7 +6,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 // Transaction Form Component
-const TransactionForm = ({ onTransactionAdded }) => {
+const TransactionForm = ({ onTransactionAdded, onTransactionUpdated, editingTransaction, onCancelEdit }) => {
   const [formData, setFormData] = useState({
     item_name: '',
     purchase_cost: '',
@@ -15,6 +15,27 @@ const TransactionForm = ({ onTransactionAdded }) => {
     date_sold: new Date().toISOString().split('T')[0]
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Update form when editing transaction changes
+  useEffect(() => {
+    if (editingTransaction) {
+      setFormData({
+        item_name: editingTransaction.item_name,
+        purchase_cost: editingTransaction.purchase_cost.toString(),
+        retail_price: editingTransaction.retail_price.toString(),
+        quantity: editingTransaction.quantity,
+        date_sold: editingTransaction.date_sold
+      });
+    } else {
+      setFormData({
+        item_name: '',
+        purchase_cost: '',
+        retail_price: '',
+        quantity: 1,
+        date_sold: new Date().toISOString().split('T')[0]
+      });
+    }
+  }, [editingTransaction]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -29,12 +50,22 @@ const TransactionForm = ({ onTransactionAdded }) => {
     setIsSubmitting(true);
     
     try {
-      const response = await axios.post(`${API}/transactions`, {
+      const payload = {
         ...formData,
         purchase_cost: parseFloat(formData.purchase_cost),
         retail_price: parseFloat(formData.retail_price),
         quantity: parseInt(formData.quantity)
-      });
+      };
+
+      if (editingTransaction) {
+        // Update existing transaction
+        const response = await axios.put(`${API}/transactions/${editingTransaction.id}`, payload);
+        onTransactionUpdated(response.data);
+      } else {
+        // Create new transaction
+        const response = await axios.post(`${API}/transactions`, payload);
+        onTransactionAdded(response.data);
+      }
       
       // Reset form
       setFormData({
@@ -45,14 +76,16 @@ const TransactionForm = ({ onTransactionAdded }) => {
         date_sold: new Date().toISOString().split('T')[0]
       });
       
-      onTransactionAdded(response.data);
-      
     } catch (error) {
-      console.error('Error creating transaction:', error);
-      alert('Error creating transaction. Please try again.');
+      console.error('Error saving transaction:', error);
+      alert('Error saving transaction. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleCancel = () => {
+    onCancelEdit();
   };
 
   const calculateProfit = () => {
@@ -64,7 +97,9 @@ const TransactionForm = ({ onTransactionAdded }) => {
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-      <h2 className="text-2xl font-bold mb-4 text-gray-800">Add New Sale</h2>
+      <h2 className="text-2xl font-bold mb-4 text-gray-800">
+        {editingTransaction ? 'Edit Sale' : 'Add New Sale'}
+      </h2>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -152,13 +187,25 @@ const TransactionForm = ({ onTransactionAdded }) => {
           </div>
         </div>
         
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition duration-200"
-        >
-          {isSubmitting ? 'Adding...' : 'Add Transaction'}
-        </button>
+        <div className="flex gap-4">
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition duration-200"
+          >
+            {isSubmitting ? 'Saving...' : (editingTransaction ? 'Update Transaction' : 'Add Transaction')}
+          </button>
+          
+          {editingTransaction && (
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition duration-200"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </form>
     </div>
   );
